@@ -23,7 +23,8 @@ class VideoAnalysisScreen extends StatefulWidget {
 class _VideoAnalysisScreenState extends State<VideoAnalysisScreen> {
   XFile? _video;
   bool _isAnalyzing = false;
-  String _statusMessage = 'Select a video to start analysis.';
+  // _statusMessage는 이제 UI에서 직접적으로 쓰기보다 로딩 상태 표시에 활용
+  String _statusMessage = '';
 
   final TextEditingController _chatController = TextEditingController();
   final List<ChatMessage> _messages = [];
@@ -57,28 +58,32 @@ class _VideoAnalysisScreenState extends State<VideoAnalysisScreen> {
   }
 
   Future<void> _pickVideo() async {
-    // 영상 선택 시 항상 상태를 초기화하여, 새 분석을 시작하도록 함
-    _resetState();
-
+    // 기존 대화 내용을 유지하기 위해 _resetState() 호출 제거
     final ImagePicker picker = ImagePicker();
     final XFile? video = await picker.pickVideo(source: ImageSource.gallery);
     if (video != null) {
       setState(() {
         _video = video;
         _isAnalyzing = true;
+        _statusMessage = 'Uploading video...';
+        // 사용자가 영상을 업로드했음을 채팅창에 표시
+        _messages.add(ChatMessage(text: '[Video Uploaded: ${video.name}]', isUser: true));
       });
+      _scrollToBottom();
       _uploadAndGetFeedback(video);
     }
   }
 
   Future<void> _uploadAndGetFeedback(XFile videoFile) async {
-    setState(() => _statusMessage = 'Uploading and analyzing video...');
+    // 분석 시작
     Map<String, dynamic>? analysisData;
 
     try {
       final uri = Uri.parse('http://127.0.0.1:5001/predict');
       final request = http.MultipartRequest('POST', uri)
         ..files.add(await http.MultipartFile.fromBytes('video', await videoFile.readAsBytes(), filename: videoFile.name));
+      
+      setState(() => _statusMessage = 'Analyzing video...');
       final response = await http.Response.fromStream(await request.send());
 
       if (response.statusCode == 200) {
@@ -93,7 +98,7 @@ class _VideoAnalysisScreenState extends State<VideoAnalysisScreen> {
     }
 
     if (analysisData != null) {
-      setState(() => _statusMessage = 'AI Coach is generating initial feedback...');
+      setState(() => _statusMessage = 'AI Coach is generating feedback...');
       await _getInitialFeedback(analysisData);
     }
     setState(() => _isAnalyzing = false);
@@ -104,7 +109,10 @@ class _VideoAnalysisScreenState extends State<VideoAnalysisScreen> {
       _handleError('Error: AI Model is not initialized. Please check your API key in secrets.dart.');
       return;
     }
-    final prompt = """You are a professional climbing coach. After analyzing the user's climbing video, you are providing the initial feedback. Keep the feedback concise and encouraging, then ask if they have any questions.
+    
+    // 프롬프트 구성
+    final prompt = """You are a professional climbing coach. I have uploaded a new climbing video.
+Analyze the following data extracted from the video:
 
 [Analysis Data]
 - Movement Efficiency (Path Inefficiency): ${analysisData['path_inefficiency']}
@@ -112,23 +120,25 @@ class _VideoAnalysisScreenState extends State<VideoAnalysisScreen> {
 - Movement Smoothness (Jerk RMS): ${analysisData['jerk_rms']}
 - Total Ascent Time: ${analysisData['ascent_time']} seconds
 
-Based on this data, provide your feedback in Korean.""";
+Based on this new data, provide your feedback in Korean. Compare it with previous attempts if possible.""";
 
     try {
-      final response = await _model!.generateContent([Content.text(prompt)]);
+      // 채팅 세션이 없으면 시작
+      if (_chat == null) {
+        _chat = _model!.startChat();
+      }
+
+      // 메시지 전송 (이전 대화 문맥 유지)
+      final response = await _chat!.sendMessage(Content.text(prompt));
       final initialFeedback = response.text ?? 'No feedback received.';
 
-      if (response.candidates.isNotEmpty) {
-        final modelResponseContent = response.candidates.first.content;
-        setState(() {
-          _chat = _model!.startChat(history: [Content.text(prompt), modelResponseContent]);
-          _messages.add(ChatMessage(text: initialFeedback, isUser: false));
-        });
-      } else {
-        _handleError('AI coach did not provide a valid response.');
-      }
+      setState(() {
+        _messages.add(ChatMessage(text: initialFeedback, isUser: false));
+      });
     } catch (e) {
       _handleError('Failed to get feedback from AI coach.\nError: ${e.toString()}');
+    } finally {
+      _scrollToBottom();
     }
   }
 
@@ -155,6 +165,7 @@ Based on this data, provide your feedback in Korean.""";
       _messages.add(ChatMessage(text: errorMessage, isUser: false));
       _isAnalyzing = false;
     });
+    _scrollToBottom();
   }
 
   void _scrollToBottom() {
@@ -170,66 +181,70 @@ Based on this data, provide your feedback in Korean.""";
     return Scaffold(
       appBar: AppBar(
         title: const Text('Video Analysis & Feedback'),
+        actions: [
+          // 대화 초기화 버튼 추가 (기존 FAB 대체)
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _resetState,
+            tooltip: 'New Chat',
+          ),
+        ],
       ),
-      // [수정] 오른쪽 하단에 플로팅 액션 버튼 추가
-      floatingActionButton: (!_isAnalyzing && _messages.isNotEmpty)
-          ? FloatingActionButton.extended(
-        onPressed: _resetState, // 버튼을 누르면 모든 상태 초기화
-        label: const Text('New Analysis'),
-        icon: const Icon(Icons.replay),
-      )
-          : null,
-      body: Padding(
-        padding: const EdgeInsets.all(8.0),
-        child: Column(
-          children: <Widget>[
-            if (!_isAnalyzing && _messages.isEmpty)
-              Expanded(
-                child: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.video_camera_front_outlined, size: 60, color: Colors.grey),
-                        const SizedBox(height: 20),
-                        const Text('Analyze your climbing video to start a conversation with the AI Coach.', textAlign: TextAlign.center),
-                        const SizedBox(height: 20),
-                        ElevatedButton.icon(
-                          icon: const Icon(Icons.video_library),
-                          onPressed: _pickVideo,
-                          label: const Text('Select Video'),
-                        ),
-                      ],
+      // FAB 제거
+      body: Column(
+        children: <Widget>[
+          Expanded(
+            child: _messages.isEmpty && !_isAnalyzing
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.video_camera_front_outlined, size: 60, color: Colors.grey),
+                          const SizedBox(height: 20),
+                          const Text('Analyze your climbing video to start a conversation with the AI Coach.', textAlign: TextAlign.center),
+                          const SizedBox(height: 20),
+                          ElevatedButton.icon(
+                            icon: const Icon(Icons.video_library),
+                            onPressed: _pickVideo,
+                            label: const Text('Select Video'),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ),
-              ),
-            if (_isAnalyzing)
-              const Expanded(
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  )
+                : Stack(
                     children: [
-                      CircularProgressIndicator(),
-                      SizedBox(height: 20),
-                      Text('Analyzing...', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      ListView.builder(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 16.0),
+                        itemCount: _messages.length + (_isAnalyzing ? 1 : 0), // 로딩 인디케이터를 위한 아이템 추가
+                        itemBuilder: (context, index) {
+                          if (index == _messages.length) {
+                            // 마지막 아이템으로 로딩 표시
+                            return Container(
+                              padding: const EdgeInsets.all(16.0),
+                              alignment: Alignment.center,
+                              child: Column(
+                                children: [
+                                  const CircularProgressIndicator(),
+                                  const SizedBox(height: 8),
+                                  Text(_statusMessage, style: const TextStyle(color: Colors.grey)),
+                                ],
+                              ),
+                            );
+                          }
+                          return _buildMessageBubble(_messages[index]);
+                        },
+                      ),
                     ],
                   ),
-                ),
-              ),
-            if (_messages.isNotEmpty)
-              Expanded(
-                child: ListView.builder(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                  itemCount: _messages.length,
-                  itemBuilder: (context, index) => _buildMessageBubble(_messages[index]),
-                ),
-              ),
-            if (!_isAnalyzing && _messages.isNotEmpty) _buildTextComposer(),
-          ],
-        ),
+          ),
+          // 입력창은 분석 중이 아닐 때 혹은 메시지가 있을 때 표시
+          // (첫 화면에서는 숨기고, 대화가 시작되면 항상 표시하되 분석 중엔 비활성화 할 수도 있음)
+          if (_messages.isNotEmpty || _isAnalyzing) _buildTextComposer(),
+        ],
       ),
     );
   }
@@ -244,19 +259,26 @@ Based on this data, provide your feedback in Korean.""";
       ),
       child: Row(
         children: [
+          // 영상 추가 버튼
+          IconButton(
+            icon: const Icon(Icons.video_library),
+            onPressed: _isAnalyzing ? null : _pickVideo,
+            tooltip: 'Add Video',
+          ),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.only(left: 16.0),
+              padding: const EdgeInsets.only(left: 8.0),
               child: TextField(
                 controller: _chatController,
-                onSubmitted: _sendChatMessage,
-                decoration: const InputDecoration.collapsed(hintText: 'Ask a follow-up question...'),
+                onSubmitted: _isAnalyzing ? null : _sendChatMessage,
+                enabled: !_isAnalyzing,
+                decoration: const InputDecoration.collapsed(hintText: 'Ask a question...'),
               ),
             ),
           ),
           IconButton(
             icon: const Icon(Icons.send),
-            onPressed: () => _sendChatMessage(_chatController.text),
+            onPressed: _isAnalyzing ? null : () => _sendChatMessage(_chatController.text),
           ),
         ],
       ),

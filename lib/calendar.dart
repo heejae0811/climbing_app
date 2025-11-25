@@ -39,7 +39,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Map<String, WorkoutLog> _events = {};
 
   // [수정] 3단계 컨디션 아이콘 및 라벨
-  final List<IconData> _conditionIcons = [Icons.sentiment_very_dissatisfied, Icons.sentiment_neutral, Icons.sentiment_very_satisfied];
+  // 두번째 아이콘을 미소(sentiment_satisfied)로 변경
+  final List<IconData> _conditionIcons = [Icons.sentiment_very_dissatisfied, Icons.sentiment_satisfied, Icons.sentiment_very_satisfied];
   final List<String> _conditionLabels = ['힘듦', '보통', '좋음'];
 
   @override
@@ -90,44 +91,51 @@ class _CalendarScreenState extends State<CalendarScreen> {
     await showDialog(
       context: context,
       builder: (context) {
+        // 화면 너비의 70% 계산
+        final width = MediaQuery.of(context).size.width * 0.7;
+
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
               title: Text('${day.month}/${day.day} 운동 기록'),
-              // [수정] 스크롤이 필요 없도록 content의 크기를 늘림
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('오늘의 컨디션', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: List.generate(3, (index) {
-                      return Column(
-                        children: [
-                          IconButton(
-                            icon: Icon(_conditionIcons[index], size: 40),
-                            color: index + 1 == currentCondition ? _getConditionColor(index + 1) : Colors.grey[400],
-                            onPressed: () => setDialogState(() => currentCondition = index + 1),
-                          ),
-                          Text(_conditionLabels[index], style: TextStyle(fontSize: 12, color: index + 1 == currentCondition ? _getConditionColor(index + 1) : Colors.grey[400])),
-                        ],
-                      );
-                    }),
-                  ),
-                  const SizedBox(height: 24),
-                  TextField(
-                    controller: durationController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: '운동 시간 (분)', border: OutlineInputBorder()),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: memoController,
-                    decoration: const InputDecoration(labelText: '한 줄 메모', border: OutlineInputBorder()),
-                  ),
-                ],
+              // [수정] content에 너비 제한을 주고 SingleChildScrollView 제거 (또는 유지하되 높이 제한 해제)
+              // 요청: 팝업 가로 크기 70%, 세로 스크롤 없음
+              content: SizedBox(
+                width: width,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min, // 내용물 크기만큼만 차지
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('오늘의 컨디션', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: List.generate(3, (index) {
+                        return Column(
+                          children: [
+                            IconButton(
+                              icon: Icon(_conditionIcons[index], size: 40),
+                              color: index + 1 == currentCondition ? _getConditionColor(index + 1) : Colors.grey[400],
+                              onPressed: () => setDialogState(() => currentCondition = index + 1),
+                            ),
+                            Text(_conditionLabels[index], style: TextStyle(fontSize: 12, color: index + 1 == currentCondition ? _getConditionColor(index + 1) : Colors.grey[400])),
+                          ],
+                        );
+                      }),
+                    ),
+                    const SizedBox(height: 24),
+                    TextField(
+                      controller: durationController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: '운동 시간 (분)', border: OutlineInputBorder()),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: memoController,
+                      decoration: const InputDecoration(labelText: '한 줄 메모', border: OutlineInputBorder()),
+                    ),
+                  ],
+                ),
               ),
               actions: [
                 TextButton(child: const Text('취소'), onPressed: () => Navigator.of(context).pop()),
@@ -174,9 +182,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
             selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
             onDaySelected: _onDaySelected,
             eventLoader: _getEventsForDay,
+            // [수정] 2주 보기 버튼(헤더 포맷 버튼) 삭제를 위해 headerStyle 수정
+            headerStyle: const HeaderStyle(
+              formatButtonVisible: false, // 2 weeks 버튼 등 포맷 변경 버튼 숨김
+              titleCentered: true,
+            ),
             calendarStyle: const CalendarStyle(
-              todayDecoration: BoxDecoration(color: Colors.deepPurpleAccent, shape: BoxShape.circle),
-              selectedDecoration: BoxDecoration(color: Colors.deepPurple, shape: BoxShape.circle),
+              todayDecoration: BoxDecoration(color: Colors.indigoAccent, shape: BoxShape.circle),
+              selectedDecoration: BoxDecoration(color: Colors.indigo, shape: BoxShape.circle),
             ),
             calendarBuilders: CalendarBuilders(
               markerBuilder: (context, day, events) {

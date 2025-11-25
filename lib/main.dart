@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'chatbot.dart';
 import 'calendar.dart';
 import 'video_analysis.dart';
@@ -15,8 +16,11 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Climbing AI App',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
         useMaterial3: true,
+        textTheme: GoogleFonts.notoSansKrTextTheme(
+          Theme.of(context).textTheme,
+        ),
       ),
       home: const MainScreen(),
     );
@@ -69,7 +73,7 @@ class _MainScreenState extends State<MainScreen> {
           ),
         ],
         currentIndex: _selectedIndex,
-        selectedItemColor: Colors.blue,
+        selectedItemColor: Colors.indigo,
         onTap: _onItemTapped,
       ),
     );
