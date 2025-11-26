@@ -38,8 +38,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   DateTime? _selectedDay;
   Map<String, WorkoutLog> _events = {};
 
-  // [수정] 3단계 컨디션 아이콘 및 라벨
-  // 두번째 아이콘을 미소(sentiment_satisfied)로 변경
+  // 3단계 컨디션 아이콘 및 라벨
   final List<IconData> _conditionIcons = [Icons.sentiment_very_dissatisfied, Icons.sentiment_satisfied, Icons.sentiment_very_satisfied];
   final List<String> _conditionLabels = ['힘듦', '보통', '좋음'];
 
@@ -98,8 +97,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
           builder: (context, setDialogState) {
             return AlertDialog(
               title: Text('${day.month}/${day.day} 운동 기록'),
-              // [수정] content에 너비 제한을 주고 SingleChildScrollView 제거 (또는 유지하되 높이 제한 해제)
-              // 요청: 팝업 가로 크기 70%, 세로 스크롤 없음
               content: SizedBox(
                 width: width,
                 child: Column(
@@ -172,7 +169,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Workout Calendar')),
+      // [수정] 타이틀 변경: Workout Calendar -> Workout Diary
+      appBar: AppBar(title: const Text('Workout Diary')),
       body: Column(
         children: [
           TableCalendar(
@@ -182,7 +180,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
             selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
             onDaySelected: _onDaySelected,
             eventLoader: _getEventsForDay,
-            // [수정] 2주 보기 버튼(헤더 포맷 버튼) 삭제를 위해 headerStyle 수정
             headerStyle: const HeaderStyle(
               formatButtonVisible: false, // 2 weeks 버튼 등 포맷 변경 버튼 숨김
               titleCentered: true,
@@ -217,7 +214,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
-  // [수정] 3단계 컨디션에 따른 색상 반환
   Color _getConditionColor(int condition) {
     switch (condition) {
       case 1: return Colors.red; // 힘듦

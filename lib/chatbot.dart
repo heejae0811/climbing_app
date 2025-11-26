@@ -41,7 +41,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
       setState(() {
         _messages.add(ChatMessage(
-          text: '안녕하세요! 저는 당신의 클라이밍 AI 코치입니다. 무엇이든 물어보세요.',
+          // [수정] 사용자 요청에 맞춰 초기 메시지 변경
+          text: '안녕하세요! 저는 당신의 클라이밍 AI 코치입니다. 오늘 운동 루틴을 만들어드릴까요?',
           isUser: false,
         ));
       });

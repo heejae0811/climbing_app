@@ -3,6 +3,10 @@ import 'package:google_fonts/google_fonts.dart';
 import 'chatbot.dart';
 import 'calendar.dart';
 import 'video_analysis.dart';
+import 'thumbnail_maker.dart';
+
+// [추가] 전역 Notifier
+final ValueNotifier<bool> analysisUpdateNotifier = ValueNotifier(false);
 
 void main() {
   runApp(const MyApp());
@@ -16,7 +20,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Climbing AI App',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.red),
         useMaterial3: true,
         textTheme: GoogleFonts.notoSansKrTextTheme(
           Theme.of(context).textTheme,
@@ -37,11 +41,12 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
 
-  // [수정] 3개의 탭에 연결될 화면 리스트
+  // [수정] 탭 순서 변경: 영상 분석 - 썸네일 만들기 - 달력 - AI 코치
   static const List<Widget> _widgetOptions = <Widget>[
-    VideoAnalysisScreen(), // 0번 탭: 영상 분석 화면
-    ChatScreen(),          // 1번 탭: 운동 계획 코치
-    CalendarScreen(),      // 2번 탭: 운동 기록 캘린더
+    VideoAnalysisScreen(), // 0번 탭: 영상 분석
+    ThumbnailMakerScreen(), // 1번 탭: 썸네일 (순서 변경)
+    CalendarScreen(),      // 2번 탭: 캘린더
+    ChatScreen(),          // 3번 탭: AI 코치 (순서 변경)
   ];
 
   void _onItemTapped(int index) {
@@ -64,16 +69,23 @@ class _MainScreenState extends State<MainScreen> {
             label: '영상 분석',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.chat_bubble),
-            label: 'AI 코치',
+            icon: Icon(Icons.image), // 썸네일 아이콘
+            label: '썸네일',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.calendar_month),
             label: '캘린더',
           ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.chat_bubble), // AI 코치 아이콘
+            label: 'AI 코치',
+          ),
         ],
         currentIndex: _selectedIndex,
-        selectedItemColor: Colors.indigo,
+        selectedItemColor: Colors.red,
+        unselectedItemColor: Colors.grey,
+        showUnselectedLabels: true,
+        type: BottomNavigationBarType.fixed,
         onTap: _onItemTapped,
       ),
     );

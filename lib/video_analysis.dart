@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'api_key.dart';
 
 // 채팅 메시지를 위한 데이터 클래스
@@ -58,7 +59,6 @@ class _VideoAnalysisScreenState extends State<VideoAnalysisScreen> {
   }
 
   Future<void> _pickVideo() async {
-    // 기존 대화 내용을 유지하기 위해 _resetState() 호출 제거
     final ImagePicker picker = ImagePicker();
     final XFile? video = await picker.pickVideo(source: ImageSource.gallery);
     if (video != null) {
@@ -66,7 +66,6 @@ class _VideoAnalysisScreenState extends State<VideoAnalysisScreen> {
         _video = video;
         _isAnalyzing = true;
         _statusMessage = 'Uploading video...';
-        // 사용자가 영상을 업로드했음을 채팅창에 표시
         _messages.add(ChatMessage(text: '[Video Uploaded: ${video.name}]', isUser: true));
       });
       _scrollToBottom();
@@ -88,6 +87,12 @@ class _VideoAnalysisScreenState extends State<VideoAnalysisScreen> {
 
       if (response.statusCode == 200) {
         analysisData = (json.decode(response.body) as Map<String, dynamic>)['gpt_prompt_data'];
+        
+        // [추가] 분석 결과를 로컬(SharedPreferences)에 저장
+        if (analysisData != null) {
+          await _saveAnalysisResult(analysisData);
+        }
+
       } else {
         _handleError('Analysis failed: ${response.reasonPhrase}\n${response.body}');
         return;
@@ -102,6 +107,23 @@ class _VideoAnalysisScreenState extends State<VideoAnalysisScreen> {
       await _getInitialFeedback(analysisData);
     }
     setState(() => _isAnalyzing = false);
+  }
+
+  // [추가] 분석 결과 저장 메서드
+  Future<void> _saveAnalysisResult(Map<String, dynamic> data) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      List<String> history = prefs.getStringList('analysis_results') ?? [];
+      
+      // 데이터에 날짜 추가 (리스트 식별용)
+      data['date'] = DateTime.now().toIso8601String();
+      
+      // 최신 데이터가 위로 오도록 추가
+      history.insert(0, json.encode(data));
+      await prefs.setStringList('analysis_results', history);
+    } catch (e) {
+      print('Error saving analysis result: $e');
+    }
   }
 
   Future<void> _getInitialFeedback(Map<String, dynamic> analysisData) async {
@@ -182,7 +204,7 @@ Based on this new data, provide your feedback in Korean. Compare it with previou
       appBar: AppBar(
         title: const Text('Video Analysis & Feedback'),
         actions: [
-          // 대화 초기화 버튼 추가 (기존 FAB 대체)
+          // 대화 초기화 버튼 추가
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _resetState,
@@ -190,7 +212,6 @@ Based on this new data, provide your feedback in Korean. Compare it with previou
           ),
         ],
       ),
-      // FAB 제거
       body: Column(
         children: <Widget>[
           Expanded(
@@ -242,7 +263,6 @@ Based on this new data, provide your feedback in Korean. Compare it with previou
                   ),
           ),
           // 입력창은 분석 중이 아닐 때 혹은 메시지가 있을 때 표시
-          // (첫 화면에서는 숨기고, 대화가 시작되면 항상 표시하되 분석 중엔 비활성화 할 수도 있음)
           if (_messages.isNotEmpty || _isAnalyzing) _buildTextComposer(),
         ],
       ),
