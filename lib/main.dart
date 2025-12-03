@@ -19,8 +19,10 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Climbing AI App',
+      debugShowCheckedModeBanner: false, // 디버그 띠 제거
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.red),
+        // [수정] 사용자가 처음 요청했던 Indigo 색상으로 복원
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
         useMaterial3: true,
         textTheme: GoogleFonts.notoSansKrTextTheme(
           Theme.of(context).textTheme,
@@ -41,12 +43,12 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
 
-  // [수정] 탭 순서 변경: 영상 분석 - 썸네일 만들기 - 달력 - AI 코치
-  static const List<Widget> _widgetOptions = <Widget>[
-    VideoAnalysisScreen(), // 0번 탭: 영상 분석
-    ThumbnailMakerScreen(), // 1번 탭: 썸네일 (순서 변경)
-    CalendarScreen(),      // 2번 탭: 캘린더
-    ChatScreen(),          // 3번 탭: AI 코치 (순서 변경)
+  // 탭 순서: 영상 분석 - 썸네일 만들기 - 달력 - AI 코치
+  final List<Widget> _widgetOptions = <Widget>[
+    const VideoAnalysisScreen(), // 0번 탭
+    const ThumbnailMakerScreen(), // 1번 탭
+    const CalendarScreen(),      // 2번 탭
+    const ChatScreen(),          // 3번 탭
   ];
 
   void _onItemTapped(int index) {
@@ -69,7 +71,7 @@ class _MainScreenState extends State<MainScreen> {
             label: '영상 분석',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.image), // 썸네일 아이콘
+            icon: Icon(Icons.image),
             label: '썸네일',
           ),
           BottomNavigationBarItem(
@@ -77,12 +79,12 @@ class _MainScreenState extends State<MainScreen> {
             label: '캘린더',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.chat_bubble), // AI 코치 아이콘
+            icon: Icon(Icons.chat_bubble),
             label: 'AI 코치',
           ),
         ],
         currentIndex: _selectedIndex,
-        selectedItemColor: Colors.red,
+        selectedItemColor: Colors.indigo, // [수정] 탭 선택 색상도 Indigo로 복원
         unselectedItemColor: Colors.grey,
         showUnselectedLabels: true,
         type: BottomNavigationBarType.fixed,

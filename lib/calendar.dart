@@ -169,7 +169,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // [수정] 타이틀 변경: Workout Calendar -> Workout Diary
       appBar: AppBar(title: const Text('Workout Diary')),
       body: Column(
         children: [
@@ -185,6 +184,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
               titleCentered: true,
             ),
             calendarStyle: const CalendarStyle(
+              // [수정] Indigo 색상으로 복원
               todayDecoration: BoxDecoration(color: Colors.indigoAccent, shape: BoxShape.circle),
               selectedDecoration: BoxDecoration(color: Colors.indigo, shape: BoxShape.circle),
             ),
