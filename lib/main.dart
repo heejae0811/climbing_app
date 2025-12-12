@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'chatbot.dart';
 import 'calendar.dart';
 import 'video_analysis.dart';
 import 'thumbnail_maker.dart';
@@ -43,12 +42,11 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
 
-  // 탭 순서: 영상 분석 - 썸네일 만들기 - 달력 - AI 코치
+  // 탭 순서: 영상 분석 - 썸네일 만들기 - 달력
   final List<Widget> _widgetOptions = <Widget>[
     const VideoAnalysisScreen(), // 0번 탭
     const ThumbnailMakerScreen(), // 1번 탭
     const CalendarScreen(),      // 2번 탭
-    const ChatScreen(),          // 3번 탭
   ];
 
   void _onItemTapped(int index) {
@@ -77,10 +75,6 @@ class _MainScreenState extends State<MainScreen> {
           BottomNavigationBarItem(
             icon: Icon(Icons.calendar_month),
             label: '캘린더',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.chat_bubble),
-            label: 'AI 코치',
           ),
         ],
         currentIndex: _selectedIndex,

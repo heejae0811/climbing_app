@@ -27,11 +27,9 @@ class _ThumbnailMakerScreenState extends State<ThumbnailMakerScreen> {
 
   XFile? _imageFile;
   final GlobalKey _imageKey = GlobalKey(); 
-  bool _isDrawing = false;
-  List<Offset> _points = [];
   int _aspectRatioIndex = 0;
-  final List<double> _aspectRatios = [1.0, 9/16, 3/4];
-  final List<String> _aspectRatioLabels = ['1:1', '9:16', '3:4'];
+  final List<double> _aspectRatios = [1.0, 3/4, 9/16];
+  final List<String> _aspectRatioLabels = ['1:1', '3:4', '9:16'];
 
   @override
   void initState() {
@@ -62,7 +60,6 @@ class _ThumbnailMakerScreenState extends State<ThumbnailMakerScreen> {
       _selectedAnalysisData = data;
       _currentMode = 1; 
       _imageFile = null; 
-      _points.clear();
     });
   }
 
@@ -79,12 +76,9 @@ class _ThumbnailMakerScreenState extends State<ThumbnailMakerScreen> {
     if (pickedFile != null) {
       setState(() {
         _imageFile = pickedFile;
-        _points.clear();
       });
     }
   }
-
-  void _clearDrawing() => setState(() => _points.clear());
 
   Future<void> _saveImage() async {
     if (_imageFile == null) {
@@ -192,7 +186,7 @@ class _ThumbnailMakerScreenState extends State<ThumbnailMakerScreen> {
           child: ListTile(
             leading: const CircleAvatar(child: Icon(Icons.analytics)),
             title: Text('Analysis - $dateStr'),
-            subtitle: Text('Time: ${data['ascent_time']}s'),
+            subtitle: Text('Score: ${data['prediction'] ?? '-'}'), 
             trailing: const Icon(Icons.arrow_forward_ios, size: 16),
             onTap: () => _selectAnalysisResult(data),
           ),
@@ -202,15 +196,33 @@ class _ThumbnailMakerScreenState extends State<ThumbnailMakerScreen> {
   }
 
   Widget _buildEditor() {
-    double currentRatio = _aspectRatios[_aspectRatioIndex];
-    
     final data = _selectedAnalysisData!;
-    // [수정] 요청하신 변수명(Distance, Speed, Time, Smoothness)으로 매핑
-    // 데이터가 없으면 '-' (빈값/기본값) 처리
-    final String distance = data['total_distance']?.toString() ?? '-';
-    final String speed = data['avg_speed']?.toString() ?? '-';
-    final String time = data['ascent_time']?.toString() ?? '-';
-    final String smoothness = data['jerk_rms']?.toString() ?? '-';
+    final features = data['feedback_features'] as Map<String, dynamic>? ?? {};
+
+    // 1. Time = total_time
+    final String time = features['total_time'] != null 
+        ? '${(features['total_time'] as num).toStringAsFixed(1)}s' 
+        : '-';
+    
+    // 2. Distance = fluency_hip_path_length
+    final String distance = features['fluency_hip_path_length'] != null 
+        ? (features['fluency_hip_path_length'] as num).toStringAsFixed(2) 
+        : '-';
+    
+    // 3. Climbing Pace = fluency_hip_velocity_mean_norm_body
+    final String pace = features['fluency_hip_velocity_mean_norm_body'] != null 
+        ? (features['fluency_hip_velocity_mean_norm_body'] as num).toStringAsFixed(3) 
+        : '-';
+
+    // 4. Smoothness = fluency_hip_jerk_mean
+    final String smoothness = features['fluency_hip_jerk_mean'] != null 
+        ? (features['fluency_hip_jerk_mean'] as num).toStringAsFixed(3) 
+        : '-';
+
+    // 5. Stability = fluency_hip_jerk_rms
+    final String stability = features['fluency_hip_jerk_rms'] != null 
+        ? (features['fluency_hip_jerk_rms'] as num).toStringAsFixed(3) 
+        : '-';
 
     return SingleChildScrollView(
       child: Column(
@@ -224,48 +236,41 @@ class _ThumbnailMakerScreenState extends State<ThumbnailMakerScreen> {
             ),
           ),
 
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: RepaintBoundary(
-              key: _imageKey,
+          RepaintBoundary(
+            key: _imageKey,
+            // [수정] 전체 화면의 70% 너비로 다시 변경
+            child: SizedBox(
+              width: MediaQuery.of(context).size.width * 0.7,
               child: AspectRatio(
-                aspectRatio: currentRatio,
+                aspectRatio: _aspectRatios[_aspectRatioIndex],
                 child: Container(
                   width: double.infinity,
                   color: Colors.grey[200],
-                  child: GestureDetector(
-                    onPanUpdate: (details) {
-                      if (_isDrawing) setState(() => _points.add(details.localPosition));
-                    },
-                    onPanEnd: (_) {},
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        if (_imageFile != null)
-                          kIsWeb 
-                              ? Image.network(_imageFile!.path, fit: BoxFit.cover)
-                              : Image.file(File(_imageFile!.path), fit: BoxFit.cover)
-                        else
-                          const Center(child: Text('Tap "Select Photo"')),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (_imageFile != null)
+                        kIsWeb 
+                            ? Image.network(_imageFile!.path, fit: BoxFit.cover)
+                            : Image.file(File(_imageFile!.path), fit: BoxFit.cover)
+                      else
+                        const Center(child: Text('Tap "Select Photo"')),
 
-                        CustomPaint(painter: TrajectoryPainter(points: _points), size: Size.infinite),
-
-                        // [수정] 오버레이 정보 4가지 표시
-                        if (_imageFile != null)
-                          Positioned(
-                            top: 20, left: 20,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _buildInfoText('Distance: $distance m'),
-                                _buildInfoText('Speed: $speed km/h'),
-                                _buildInfoText('Time: ${time}s'),
-                                _buildInfoText('Smoothness: $smoothness'),
-                              ],
-                            ),
+                      if (_imageFile != null)
+                        Positioned(
+                          top: 20, left: 20,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildInfoText('Time: $time'),
+                              _buildInfoText('Distance: $distance'),
+                              _buildInfoText('Pace: $pace'),
+                              _buildInfoText('Smoothness: $smoothness'),
+                              _buildInfoText('Stability: $stability'),
+                            ],
                           ),
-                      ],
-                    ),
+                        ),
+                    ],
                   ),
                 ),
               ),
@@ -274,63 +279,73 @@ class _ThumbnailMakerScreenState extends State<ThumbnailMakerScreen> {
 
           const SizedBox(height: 16),
 
+          // [수정] Analysis Data 영역을 이미지와 버튼 사이에 위치시키고 가운데 정렬
+          const Text('Analysis Data', style: TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 10),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    ElevatedButton.icon(
-                      onPressed: _pickImage,
-                      icon: const Icon(Icons.photo),
-                      label: const Text('Select Photo'),
-                    ),
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(backgroundColor: _isDrawing ? Colors.redAccent : null),
-                      onPressed: _imageFile == null ? null : () => setState(() => _isDrawing = !_isDrawing),
-                      icon: const Icon(Icons.edit),
-                      label: Text(_isDrawing ? 'Stop Drawing' : 'Draw Path'),
-                    ),
-                    IconButton(onPressed: _clearDrawing, icon: const Icon(Icons.refresh), tooltip: 'Clear Path'),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                
-                const Text('Selected Analysis Data', style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 10),
-                // [수정] 데이터 정보 카드도 4가지 변수로 업데이트
-                Card(
-                  color: Colors.grey[100],
-                  child: Padding(
-                    padding: const EdgeInsets.all(12.0),
+            child: Card(
+              color: Colors.grey[100],
+              child: Padding(
+                padding: const EdgeInsets.all(12.0),
+                // [수정] 가운데 정렬을 위해 Center로 감쌈
+                child: Center(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      mainAxisAlignment: MainAxisAlignment.center, // Row 내부 아이템도 가운데 정렬
                       children: [
+                        _buildDataLabel('Time', time),
+                        const SizedBox(width: 15),
                         _buildDataLabel('Distance', distance),
-                        _buildDataLabel('Speed', speed),
-                        _buildDataLabel('Time', '${time}s'),
+                        const SizedBox(width: 15),
+                        _buildDataLabel('Pace', pace),
+                        const SizedBox(width: 15),
                         _buildDataLabel('Smoothness', smoothness),
+                        const SizedBox(width: 15),
+                        _buildDataLabel('Stability', stability),
                       ],
                     ),
                   ),
                 ),
+              ),
+            ),
+          ),
+          
+          const SizedBox(height: 30),
 
-                const SizedBox(height: 30),
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton.icon(
-                    onPressed: _saveImage,
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo, foregroundColor: Colors.white),
-                    icon: const Icon(Icons.save_alt),
-                    label: const Text('Save to Gallery', style: TextStyle(fontSize: 18)),
+          // [수정] Select Photo / Save Photo 버튼을 맨 아래로 배치
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 50,
+                    child: ElevatedButton.icon(
+                      onPressed: _pickImage,
+                      icon: const Icon(Icons.photo),
+                      label: const Text('Select Photo'),
+                    ),
                   ),
                 ),
-                const SizedBox(height: 50),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: SizedBox(
+                    height: 50,
+                    child: ElevatedButton.icon(
+                      onPressed: _saveImage,
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo, foregroundColor: Colors.white),
+                      icon: const Icon(Icons.save_alt),
+                      // [수정] 버튼 텍스트 Save -> Save Photo로 변경
+                      label: const Text('Save Photo'),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
+          const SizedBox(height: 50),
         ],
       ),
     );
@@ -341,7 +356,7 @@ class _ThumbnailMakerScreenState extends State<ThumbnailMakerScreen> {
       children: [
         Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
         const SizedBox(height: 4),
-        Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)), // 폰트 사이즈 살짝 조정
+        Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)), 
       ],
     );
   }
@@ -351,26 +366,10 @@ class _ThumbnailMakerScreenState extends State<ThumbnailMakerScreen> {
       text,
       style: const TextStyle(
         color: Colors.white,
-        fontSize: 20,
+        fontSize: 18, 
         fontWeight: FontWeight.bold,
         shadows: [Shadow(blurRadius: 4, color: Colors.black, offset: Offset(1, 1))],
       ),
     );
   }
-}
-
-class TrajectoryPainter extends CustomPainter {
-  final List<Offset> points;
-  TrajectoryPainter({required this.points});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = Colors.cyanAccent..strokeCap = StrokeCap.round..strokeWidth = 4.0;
-    for (int i = 0; i < points.length - 1; i++) {
-      canvas.drawLine(points[i], points[i + 1], paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }

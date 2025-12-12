@@ -6,8 +6,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_key.dart';
+import 'main.dart'; // 전역 Notifier 접근
 
-// 채팅 메시지를 위한 데이터 클래스
 class ChatMessage {
   final String text;
   final bool isUser;
@@ -24,7 +24,6 @@ class VideoAnalysisScreen extends StatefulWidget {
 class _VideoAnalysisScreenState extends State<VideoAnalysisScreen> {
   XFile? _video;
   bool _isAnalyzing = false;
-  // _statusMessage는 이제 UI에서 직접적으로 쓰기보다 로딩 상태 표시에 활용
   String _statusMessage = '';
 
   final TextEditingController _chatController = TextEditingController();
@@ -38,7 +37,15 @@ class _VideoAnalysisScreenState extends State<VideoAnalysisScreen> {
     super.initState();
     if (googleApiKey.isNotEmpty && !googleApiKey.startsWith('YOUR_')) {
       _model = GenerativeModel(model: 'gemini-flash-latest', apiKey: googleApiKey);
+      // [수정] 모델 초기화 시 바로 채팅 세션 시작
+      _chat = _model!.startChat(); 
     }
+    
+    // [수정] 초기 메시지 바로 추가
+    _messages.add(ChatMessage(
+      text: '클라이밍 AI 코치입니다. 분석할 영상을 업로드 하거나 궁금한 게 있으면 물어보세요.', 
+      isUser: false
+    ));
   }
 
   @override
@@ -52,9 +59,14 @@ class _VideoAnalysisScreenState extends State<VideoAnalysisScreen> {
     setState(() {
       _video = null;
       _messages.clear();
-      _chat = null;
+      // 리셋 시에도 초기 메시지 다시 추가
+      _messages.add(ChatMessage(
+        text: '클라이밍 AI 코치입니다. 분석할 영상을 업로드 하거나 궁금한 게 있으면 물어보세요.', 
+        isUser: false
+      ));
+      _chat = _model?.startChat(); // 채팅 세션도 초기화
       _isAnalyzing = false;
-      _statusMessage = 'Select a video to start analysis.';
+      _statusMessage = '';
     });
   }
 
@@ -74,23 +86,79 @@ class _VideoAnalysisScreenState extends State<VideoAnalysisScreen> {
   }
 
   Future<void> _uploadAndGetFeedback(XFile videoFile) async {
-    // 분석 시작
     Map<String, dynamic>? analysisData;
+    List<dynamic>? serverFeedback;
+    String? prediction;
+    Map<String, dynamic>? rawPrediction;
 
     try {
       final uri = Uri.parse('http://127.0.0.1:5001/predict');
+
       final request = http.MultipartRequest('POST', uri)
         ..files.add(await http.MultipartFile.fromBytes('video', await videoFile.readAsBytes(), filename: videoFile.name));
-      
+
       setState(() => _statusMessage = 'Analyzing video...');
       final response = await http.Response.fromStream(await request.send());
 
       if (response.statusCode == 200) {
-        analysisData = (json.decode(response.body) as Map<String, dynamic>)['gpt_prompt_data'];
+        final dynamic decoded = json.decode(utf8.decode(response.bodyBytes));
+        if (decoded is! Map<String, dynamic>) {
+          throw FormatException('Unexpected response format: $decoded');
+        }
+        final jsonResponse = decoded;
+
+        dynamic features;
+        if (jsonResponse.containsKey('feedback_features')) {
+          features = jsonResponse['feedback_features'];
+        } else if (jsonResponse.containsKey('feature_values')) {
+          features = jsonResponse['feature_values'];
+        }
+
+        if (features != null) {
+          if (features is Map<String, dynamic>) {
+            analysisData = features;
+          } else if (features is Map) {
+            analysisData = Map<String, dynamic>.from(features);
+          }
+        }
+
+        dynamic fb;
+        if (jsonResponse.containsKey('feedback_messages')) {
+          fb = jsonResponse['feedback_messages'];
+        } else if (jsonResponse.containsKey('feedback')) {
+          fb = jsonResponse['feedback'];
+        }
+
+        if (fb is List) {
+          serverFeedback = fb;
+        }
+
+        if (jsonResponse.containsKey('prediction')) {
+          final pred = jsonResponse['prediction'];
+          if (pred is Map) {
+            rawPrediction = Map<String, dynamic>.from(pred);
+            prediction = rawPrediction['label']?.toString();
+          } else {
+            prediction = pred?.toString();
+          }
+        }
+
+        final dataToSave = <String, dynamic>{
+          'date': DateTime.now().toIso8601String(),
+        };
+        if (analysisData != null) dataToSave['feedback_features'] = analysisData;
+        if (serverFeedback != null) dataToSave['feedback_messages'] = serverFeedback;
         
-        // [추가] 분석 결과를 로컬(SharedPreferences)에 저장
-        if (analysisData != null) {
-          await _saveAnalysisResult(analysisData);
+        if (rawPrediction != null) {
+          dataToSave['prediction'] = rawPrediction;
+        } else if (prediction != null) {
+          dataToSave['prediction'] = prediction;
+        }
+
+        if (analysisData != null || serverFeedback != null) {
+          await _saveAnalysisResult(dataToSave);
+        } else {
+           print('Warning: No analysis data found in response. Keys: ${jsonResponse.keys}');
         }
 
       } else {
@@ -102,55 +170,60 @@ class _VideoAnalysisScreenState extends State<VideoAnalysisScreen> {
       return;
     }
 
-    if (analysisData != null) {
+    if (analysisData != null || serverFeedback != null) {
       setState(() => _statusMessage = 'AI Coach is generating feedback...');
-      await _getInitialFeedback(analysisData);
+      await _getInitialFeedback(analysisData ?? {}, serverFeedback, prediction);
+    } else {
+      _handleError('No analysis data received. (Check JSON keys)');
     }
     setState(() => _isAnalyzing = false);
   }
 
-  // [추가] 분석 결과 저장 메서드
   Future<void> _saveAnalysisResult(Map<String, dynamic> data) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       List<String> history = prefs.getStringList('analysis_results') ?? [];
       
-      // 데이터에 날짜 추가 (리스트 식별용)
-      data['date'] = DateTime.now().toIso8601String();
-      
-      // 최신 데이터가 위로 오도록 추가
+      if (!data.containsKey('date')) {
+        data['date'] = DateTime.now().toIso8601String();
+      }
       history.insert(0, json.encode(data));
       await prefs.setStringList('analysis_results', history);
+      analysisUpdateNotifier.value = !analysisUpdateNotifier.value;
     } catch (e) {
       print('Error saving analysis result: $e');
     }
   }
 
-  Future<void> _getInitialFeedback(Map<String, dynamic> analysisData) async {
+  Future<void> _getInitialFeedback(Map<String, dynamic> analysisData, List<dynamic>? serverFeedback, String? prediction) async {
     if (_model == null) {
-      _handleError('Error: AI Model is not initialized. Please check your API key in secrets.dart.');
+      _handleError('Error: AI Model is not initialized.');
       return;
     }
-    
-    // 프롬프트 구성
+
     final prompt = """You are a professional climbing coach. I have uploaded a new climbing video.
-Analyze the following data extracted from the video:
+The server analysis provided the following results:
+
+[Prediction]
+${prediction ?? 'Unknown'}
 
 [Analysis Data]
-- Movement Efficiency (Path Inefficiency): ${analysisData['path_inefficiency']}
-- Hesitation (Immobility Ratio): ${(analysisData['immobility_ratio'] * 100).toStringAsFixed(1)}%
-- Movement Smoothness (Jerk RMS): ${analysisData['jerk_rms']}
-- Total Ascent Time: ${analysisData['ascent_time']} seconds
+${analysisData.entries.map((e) => '- ${e.key}: ${e.value}').join('\n')}
 
-Based on this new data, provide your feedback in Korean. Compare it with previous attempts if possible.""";
+[Server Feedback]
+${serverFeedback?.join('\n') ?? 'No specific feedback provided.'}
+
+Based on this information, please:
+1. Summarize the server's feedback in a friendly and encouraging tone.
+2. Explain what the analysis values mean for my climbing (e.g., jerk, velocity).
+3. Provide specific advice to improve my climbing technique.
+Please provide your response in Korean.""";
 
     try {
-      // 채팅 세션이 없으면 시작
       if (_chat == null) {
         _chat = _model!.startChat();
       }
 
-      // 메시지 전송 (이전 대화 문맥 유지)
       final response = await _chat!.sendMessage(Content.text(prompt));
       final initialFeedback = response.text ?? 'No feedback received.';
 
@@ -204,7 +277,6 @@ Based on this new data, provide your feedback in Korean. Compare it with previou
       appBar: AppBar(
         title: const Text('Video Analysis & Feedback'),
         actions: [
-          // 대화 초기화 버튼 추가
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _resetState,
@@ -215,55 +287,31 @@ Based on this new data, provide your feedback in Korean. Compare it with previou
       body: Column(
         children: <Widget>[
           Expanded(
-            child: _messages.isEmpty && !_isAnalyzing
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.video_camera_front_outlined, size: 60, color: Colors.grey),
-                          const SizedBox(height: 20),
-                          const Text('Analyze your climbing video to start a conversation with the AI Coach.', textAlign: TextAlign.center),
-                          const SizedBox(height: 20),
-                          ElevatedButton.icon(
-                            icon: const Icon(Icons.video_library),
-                            onPressed: _pickVideo,
-                            label: const Text('Select Video'),
-                          ),
-                        ],
-                      ),
+            // [수정] _messages가 비어있을 때 표시하던 초기 화면(버튼 2개) 제거하고
+            // 항상 리스트뷰를 표시하도록 변경 (초기 메시지가 항상 있으므로)
+            child: ListView.builder(
+              controller: _scrollController,
+              padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 16.0),
+              itemCount: _messages.length + (_isAnalyzing ? 1 : 0),
+              itemBuilder: (context, index) {
+                if (index == _messages.length) {
+                  return Container(
+                    padding: const EdgeInsets.all(16.0),
+                    alignment: Alignment.center,
+                    child: Column(
+                      children: [
+                        const CircularProgressIndicator(),
+                        const SizedBox(height: 8),
+                        Text(_statusMessage, style: const TextStyle(color: Colors.grey)),
+                      ],
                     ),
-                  )
-                : Stack(
-                    children: [
-                      ListView.builder(
-                        controller: _scrollController,
-                        padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 16.0),
-                        itemCount: _messages.length + (_isAnalyzing ? 1 : 0), // 로딩 인디케이터를 위한 아이템 추가
-                        itemBuilder: (context, index) {
-                          if (index == _messages.length) {
-                            // 마지막 아이템으로 로딩 표시
-                            return Container(
-                              padding: const EdgeInsets.all(16.0),
-                              alignment: Alignment.center,
-                              child: Column(
-                                children: [
-                                  const CircularProgressIndicator(),
-                                  const SizedBox(height: 8),
-                                  Text(_statusMessage, style: const TextStyle(color: Colors.grey)),
-                                ],
-                              ),
-                            );
-                          }
-                          return _buildMessageBubble(_messages[index]);
-                        },
-                      ),
-                    ],
-                  ),
+                  );
+                }
+                return _buildMessageBubble(_messages[index]);
+              },
+            ),
           ),
-          // 입력창은 분석 중이 아닐 때 혹은 메시지가 있을 때 표시
-          if (_messages.isNotEmpty || _isAnalyzing) _buildTextComposer(),
+          _buildTextComposer(), // 항상 입력창 표시
         ],
       ),
     );
@@ -279,7 +327,6 @@ Based on this new data, provide your feedback in Korean. Compare it with previou
       ),
       child: Row(
         children: [
-          // 영상 추가 버튼
           IconButton(
             icon: const Icon(Icons.video_library),
             onPressed: _isAnalyzing ? null : _pickVideo,
